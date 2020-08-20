@@ -8,6 +8,7 @@ import com.zc.miaoshaproject.response.CommonReturnType;
 import com.zc.miaoshaproject.service.model.UserModel;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Controller;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +19,8 @@ import java.io.UnsupportedEncodingException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Random;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 /**
  */
@@ -32,7 +35,8 @@ public class UserController  extends BaseController{
     @Autowired
     private HttpServletRequest httpServletRequest;
 
-
+    @Autowired
+    private RedisTemplate redisTemplate;
 
 
 
@@ -139,11 +143,14 @@ public class UserController  extends BaseController{
 
         //用户登陆服务,用来校验用户登陆是否合法
         UserModel userModel = userService.validateLogin(telphone,this.EncodeByMd5(password));
+        String token = UUID.randomUUID().toString().replace("-", "");
+        redisTemplate.opsForValue().set(token,userModel);
+        redisTemplate.expire(token,60, TimeUnit.MINUTES);
         //将登陆凭证加入到用户登陆成功的session内
-        this.httpServletRequest.getSession().setAttribute("IS_LOGIN",true);
-        this.httpServletRequest.getSession().setAttribute("LOGIN_USER",userModel);
+//        this.httpServletRequest.getSession().setAttribute("IS_LOGIN",true);
+//        this.httpServletRequest.getSession().setAttribute("LOGIN_USER",userModel);
 
-        return CommonReturnType.create(null);
+        return CommonReturnType.create(token);
     }
 
 
