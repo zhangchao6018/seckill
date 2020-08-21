@@ -14,11 +14,13 @@ import com.zc.miaoshaproject.service.PromoService;
 import com.zc.miaoshaproject.validator.ValidationResult;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -37,6 +39,8 @@ public class ItemServiceImpl implements ItemService {
 
     @Autowired
     private ItemStockDOMapper itemStockDOMapper;
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     private ItemDO convertItemDOFromItemModel(ItemModel itemModel){
         if(itemModel == null){
@@ -110,6 +114,19 @@ public class ItemServiceImpl implements ItemService {
         if(promoModel != null && promoModel.getStatus().intValue() != 3){
             itemModel.setPromoModel(promoModel);
         }
+        return itemModel;
+    }
+
+    @Override
+    public ItemModel getItemByIdInCache(Integer id) {
+        String cacheKey = "item_validate_"+id;
+        ItemModel itemModel = (ItemModel) redisTemplate.opsForValue().get(cacheKey);
+        if (itemModel==null){
+            itemModel = this.getItemById(id);
+            redisTemplate.opsForValue().set(cacheKey,itemModel);
+            redisTemplate.expire(cacheKey,10, TimeUnit.MINUTES);
+        }
+
         return itemModel;
     }
 

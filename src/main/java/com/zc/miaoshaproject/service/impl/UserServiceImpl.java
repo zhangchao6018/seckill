@@ -1,22 +1,24 @@
 package com.zc.miaoshaproject.service.impl;
 
 import com.zc.miaoshaproject.dao.UserDOMapper;
+import com.zc.miaoshaproject.dao.UserPasswordDOMapper;
+import com.zc.miaoshaproject.dataobject.UserDO;
+import com.zc.miaoshaproject.dataobject.UserPasswordDO;
 import com.zc.miaoshaproject.error.BusinessException;
 import com.zc.miaoshaproject.error.EmBusinessError;
 import com.zc.miaoshaproject.service.UserService;
 import com.zc.miaoshaproject.service.model.UserModel;
-import com.zc.miaoshaproject.validator.ValidatorImpl;
 import com.zc.miaoshaproject.validator.ValidationResult;
-import com.zc.miaoshaproject.dataobject.UserPasswordDO;
+import com.zc.miaoshaproject.validator.ValidatorImpl;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
-
-import com.zc.miaoshaproject.dao.UserPasswordDOMapper;
-import com.zc.miaoshaproject.dataobject.UserDO;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  */
@@ -32,6 +34,9 @@ public class UserServiceImpl implements UserService {
     @Autowired
     private ValidatorImpl validator;
 
+    @Autowired
+    private RedisTemplate redisTemplate;
+
     @Override
     public UserModel getUserById(Integer id) {
         //调用userdomapper获取到对应的用户dataobject
@@ -43,6 +48,18 @@ public class UserServiceImpl implements UserService {
         UserPasswordDO userPasswordDO = userPasswordDOMapper.selectByUserId(userDO.getId());
 
         return convertFromDataObject(userDO,userPasswordDO);
+    }
+
+    @Override
+    public UserModel getUserByIdInCache(Integer id) {
+        String cacheKey = "user_validate_"+id;
+        UserModel userModel = (UserModel) redisTemplate.opsForValue().get(cacheKey);
+        if(userModel==null){
+            userModel = this.getUserById(id);
+            redisTemplate.opsForValue().set(cacheKey,userModel);
+            redisTemplate.expire(cacheKey,10, TimeUnit.MINUTES);
+        }
+        return userModel;
     }
 
     @Override
