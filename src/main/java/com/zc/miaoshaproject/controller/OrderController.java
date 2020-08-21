@@ -38,6 +38,7 @@ public class OrderController extends BaseController {
                                         @RequestParam(name="promoId",required = false)Integer promoId) throws BusinessException {
 
 //        Boolean isLogin = (Boolean) httpServletRequest.getSession().getAttribute("IS_LOGIN");
+        //此处getParameterMap应该非空处理
         String token = httpServletRequest.getParameterMap().get("token")[0];
 
         if(StringUtils.isEmpty(token)){
