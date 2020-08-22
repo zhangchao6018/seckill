@@ -1,18 +1,20 @@
 package com.zc.miaoshaproject.service.impl;
 
 import com.zc.miaoshaproject.dao.ItemDOMapper;
+import com.zc.miaoshaproject.dao.ItemStockDOMapper;
+import com.zc.miaoshaproject.dao.StockLogDOMapper;
 import com.zc.miaoshaproject.dataobject.ItemDO;
 import com.zc.miaoshaproject.dataobject.ItemStockDO;
+import com.zc.miaoshaproject.dataobject.StockLogDO;
 import com.zc.miaoshaproject.error.BusinessException;
 import com.zc.miaoshaproject.error.EmBusinessError;
 import com.zc.miaoshaproject.mq.MqProducer;
-import com.zc.miaoshaproject.service.model.ItemModel;
-import com.zc.miaoshaproject.service.model.PromoModel;
-import com.zc.miaoshaproject.validator.ValidatorImpl;
-import com.zc.miaoshaproject.dao.ItemStockDOMapper;
 import com.zc.miaoshaproject.service.ItemService;
 import com.zc.miaoshaproject.service.PromoService;
+import com.zc.miaoshaproject.service.model.ItemModel;
+import com.zc.miaoshaproject.service.model.PromoModel;
 import com.zc.miaoshaproject.validator.ValidationResult;
+import com.zc.miaoshaproject.validator.ValidatorImpl;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -21,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -46,6 +49,9 @@ public class ItemServiceImpl implements ItemService {
 
     @Autowired
     private MqProducer mqProducer;
+
+    @Autowired
+    private StockLogDOMapper stockLogDOMapper;
 
     private ItemDO convertItemDOFromItemModel(ItemModel itemModel){
         if(itemModel == null){
@@ -143,16 +149,8 @@ public class ItemServiceImpl implements ItemService {
         if(result > 0){
             //更新库存成功,且剩余库存合法
             return true;
-//            boolean mqResult = mqProducer.asyncReduceStock(itemId, amount);
-//            if (mqResult) {
-//                return true;
-//            }else {
-//                //消息发送失败--回补库存
-//                increaseStock(itemId,amount);
-//                return false;
-//            }
         }else if(result == 0){
-            //扣减后库存为0--告知
+            //扣减后库存为0--做标记(实际情况的数据阈值需要视情况定,比如 奖池40万,随机抽奖减扣奖池,这个数据可能只是一个范围,比如库存小于 10  --->售罄)
             redisTemplate.opsForValue().set("promo_item_stock_invalid_"+itemId,"true");
             //更新库存成功
             return true;
@@ -184,4 +182,17 @@ public class ItemServiceImpl implements ItemService {
         return itemModel;
     }
 
+    @Override
+    public String initStockLog(Integer itemId, Integer amount) {
+        //可以将userid信息关联上
+        StockLogDO stockLogDO = new StockLogDO();
+        stockLogDO.setItemId(itemId);
+        stockLogDO.setAmount(amount);
+        stockLogDO.setStockLogId(UUID.randomUUID().toString().replace("-",""));
+        stockLogDO.setStatus(1);
+
+        stockLogDOMapper.insertSelective(stockLogDO);
+
+        return stockLogDO.getStockLogId();
+    }
 }

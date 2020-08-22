@@ -46,13 +46,13 @@ public class MqConsumer {
         consumer.registerMessageListener(new MessageListenerConcurrently() {
             @Override
             public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> list, ConsumeConcurrentlyContext consumeConcurrentlyContext) {
-                System.out.println("消费端收到消息:"+list);
 
                 MessageExt message = list.get(0);
                 Map<String,Object> map = JSONObject.parseObject(new String(message.getBody()), Map.class);
                 Integer itemId = (Integer) map.get("itemId");
                 Integer amount = (Integer) map.get("amount");
                 int i = itemStockDOMapper.decreaseStock(itemId, amount);
+//                System.out.println("consume ok");
                 return i>0?ConsumeConcurrentlyStatus.CONSUME_SUCCESS:ConsumeConcurrentlyStatus.RECONSUME_LATER;
             }
         });

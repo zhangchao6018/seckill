@@ -1,10 +1,11 @@
 package com.zc.miaoshaproject.controller;
 
-import com.zc.miaoshaproject.service.OrderService;
 import com.zc.miaoshaproject.error.BusinessException;
 import com.zc.miaoshaproject.error.EmBusinessError;
+import com.zc.miaoshaproject.mq.MqProducer;
 import com.zc.miaoshaproject.response.CommonReturnType;
-import com.zc.miaoshaproject.service.model.OrderModel;
+import com.zc.miaoshaproject.service.ItemService;
+import com.zc.miaoshaproject.service.OrderService;
 import com.zc.miaoshaproject.service.model.UserModel;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,12 @@ public class OrderController extends BaseController {
     @Autowired
     private RedisTemplate redisTemplate;
 
+    @Autowired
+    private MqProducer mqProducer;
+
+    @Autowired
+    private ItemService itemService;
+
     //封装下单请求
     @RequestMapping(value = "/createorder",method = {RequestMethod.POST},consumes={CONTENT_TYPE_FORMED})
     @ResponseBody
@@ -51,8 +58,20 @@ public class OrderController extends BaseController {
         if (Objects.isNull(userModel)){
             throw new BusinessException(EmBusinessError.USER_NOT_LOGIN,"用户还未登陆，不能下单");
         }
-        OrderModel orderModel = orderService.createOrder(userModel.getId(),itemId,promoId,amount);
+//        OrderModel orderModel = orderService.createOrder(userModel.getId(),itemId,promoId,amount);
 
+        //缓存查询是否售罄
+        if(redisTemplate.hasKey("promo_item_stock_invalid_"+itemId)){
+            throw new BusinessException(EmBusinessError.STOCK_NOT_ENOUGH,"库存不足");
+        }
+
+        //初始化库存流水
+        String stockLogId = itemService.initStockLog(itemId, amount);
+        //异步事务消息
+        boolean b = mqProducer.transactionAsyncReduceStock(userModel.getId(), itemId, promoId, amount,stockLogId);
+        if (!b){
+            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR,"下单失败");
+        }
         return CommonReturnType.create(null);
     }
 }

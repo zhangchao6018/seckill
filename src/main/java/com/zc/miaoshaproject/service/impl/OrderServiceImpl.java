@@ -1,7 +1,11 @@
 package com.zc.miaoshaproject.service.impl;
 
 import com.zc.miaoshaproject.dao.OrderDOMapper;
+import com.zc.miaoshaproject.dao.SequenceDOMapper;
+import com.zc.miaoshaproject.dao.StockLogDOMapper;
+import com.zc.miaoshaproject.dataobject.OrderDO;
 import com.zc.miaoshaproject.dataobject.SequenceDO;
+import com.zc.miaoshaproject.dataobject.StockLogDO;
 import com.zc.miaoshaproject.error.BusinessException;
 import com.zc.miaoshaproject.error.EmBusinessError;
 import com.zc.miaoshaproject.mq.MqProducer;
@@ -11,15 +15,11 @@ import com.zc.miaoshaproject.service.UserService;
 import com.zc.miaoshaproject.service.model.ItemModel;
 import com.zc.miaoshaproject.service.model.OrderModel;
 import com.zc.miaoshaproject.service.model.UserModel;
-import com.zc.miaoshaproject.dao.SequenceDOMapper;
-import com.zc.miaoshaproject.dataobject.OrderDO;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -45,9 +45,12 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private MqProducer mqProducer;
 
+    @Autowired
+    private StockLogDOMapper stockLogDOMapper;
+
     @Override
     @Transactional
-    public OrderModel createOrder(Integer userId, Integer itemId, Integer promoId, Integer amount) throws BusinessException {
+    public OrderModel createOrder(Integer userId, Integer itemId, Integer promoId, Integer amount, String stockLogId) throws BusinessException {
         //1.校验下单状态,下单的商品是否存在，用户是否合法，购买数量是否正确
         ItemModel itemModel = itemService.getItemByIdInCache(itemId);
         if(itemModel == null){
@@ -102,24 +105,30 @@ public class OrderServiceImpl implements OrderService {
         //加上商品的销量
         itemService.increaseSales(itemId,amount);
 
+        //设置库存流水状态
+        StockLogDO stockLogDO = stockLogDOMapper.selectByPrimaryKey(stockLogId);
+        if (stockLogDO==null){
+            throw new BusinessException(EmBusinessError.UNKNOWN_ERROR,"下单失败");
+        }
+        stockLogDO.setStatus(2);
+        stockLogDOMapper.updateByPrimaryKeySelective(stockLogDO);
 
         //事务提交成功后,异步执行的任务
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                //发送异步消息减扣库存
-                boolean mqResult = mqProducer.asyncReduceStock(itemId, amount);
-                if (!mqResult){
-                    //回滚库存
-                    try {
-                        itemService.increaseStock(itemId, amount);
-                    } catch (BusinessException e) {
-                        e.printStackTrace();
-                    }
-//                    throw new BusinessException(EmBusinessError.MQ_SEND_FAIL,"库存异步消息失败");
-                }
-            }
-        });
+//        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+//            @Override
+//            public void afterCommit() {
+//                //发送异步消息减扣库存
+//                boolean mqResult = mqProducer.asyncReduceStock(itemId, amount);
+//                if (!mqResult){
+//                    //回滚库存
+//                    try {
+//                        itemService.increaseStock(itemId, amount);
+//                    } catch (BusinessException e) {
+//                        e.printStackTrace();
+//                    }
+//                }
+//            }
+//        });
         //4.返回前端
         return orderModel;
     }
