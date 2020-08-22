@@ -141,17 +141,18 @@ public class ItemServiceImpl implements ItemService {
 //        int affectedRow =  itemStockDOMapper.decreaseStock(itemId,amount);
         long result = redisTemplate.opsForValue().increment("promo_item_stock_"+itemId,amount.intValue() * -1);
         if(result > 0){
-            //更新库存成功
-            boolean mqResult = mqProducer.asyncReduceStock(itemId, amount);
-            if (mqResult) {
-                return true;
-            }else {
-                //消息发送失败--回补库存
-                increaseStock(itemId,amount);
-                return false;
-            }
+            //更新库存成功,且剩余库存合法
+            return true;
+//            boolean mqResult = mqProducer.asyncReduceStock(itemId, amount);
+//            if (mqResult) {
+//                return true;
+//            }else {
+//                //消息发送失败--回补库存
+//                increaseStock(itemId,amount);
+//                return false;
+//            }
         }else if(result == 0){
-            //库存为0--告知
+            //扣减后库存为0--告知
             redisTemplate.opsForValue().set("promo_item_stock_invalid_"+itemId,"true");
             //更新库存成功
             return true;

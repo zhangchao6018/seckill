@@ -4,6 +4,7 @@ import com.zc.miaoshaproject.dao.OrderDOMapper;
 import com.zc.miaoshaproject.dataobject.SequenceDO;
 import com.zc.miaoshaproject.error.BusinessException;
 import com.zc.miaoshaproject.error.EmBusinessError;
+import com.zc.miaoshaproject.mq.MqProducer;
 import com.zc.miaoshaproject.service.ItemService;
 import com.zc.miaoshaproject.service.OrderService;
 import com.zc.miaoshaproject.service.UserService;
@@ -17,6 +18,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -38,6 +41,9 @@ public class OrderServiceImpl implements OrderService {
 
     @Autowired
     private OrderDOMapper orderDOMapper;
+
+    @Autowired
+    private MqProducer mqProducer;
 
     @Override
     @Transactional
@@ -95,6 +101,25 @@ public class OrderServiceImpl implements OrderService {
 
         //加上商品的销量
         itemService.increaseSales(itemId,amount);
+
+
+        //事务提交成功后,异步执行的任务
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                //发送异步消息减扣库存
+                boolean mqResult = mqProducer.asyncReduceStock(itemId, amount);
+                if (!mqResult){
+                    //回滚库存
+                    try {
+                        itemService.increaseStock(itemId, amount);
+                    } catch (BusinessException e) {
+                        e.printStackTrace();
+                    }
+//                    throw new BusinessException(EmBusinessError.MQ_SEND_FAIL,"库存异步消息失败");
+                }
+            }
+        });
         //4.返回前端
         return orderModel;
     }
