@@ -5,6 +5,7 @@ import com.zc.miaoshaproject.dataobject.ItemDO;
 import com.zc.miaoshaproject.dataobject.ItemStockDO;
 import com.zc.miaoshaproject.error.BusinessException;
 import com.zc.miaoshaproject.error.EmBusinessError;
+import com.zc.miaoshaproject.mq.MqProducer;
 import com.zc.miaoshaproject.service.model.ItemModel;
 import com.zc.miaoshaproject.service.model.PromoModel;
 import com.zc.miaoshaproject.validator.ValidatorImpl;
@@ -39,8 +40,12 @@ public class ItemServiceImpl implements ItemService {
 
     @Autowired
     private ItemStockDOMapper itemStockDOMapper;
+
     @Autowired
     private RedisTemplate redisTemplate;
+
+    @Autowired
+    private MqProducer mqProducer;
 
     private ItemDO convertItemDOFromItemModel(ItemModel itemModel){
         if(itemModel == null){
@@ -133,15 +138,34 @@ public class ItemServiceImpl implements ItemService {
     @Override
     @Transactional
     public boolean decreaseStock(Integer itemId, Integer amount) throws BusinessException {
-        int affectedRow =  itemStockDOMapper.decreaseStock(itemId,amount);
-        if(affectedRow > 0){
+//        int affectedRow =  itemStockDOMapper.decreaseStock(itemId,amount);
+        long result = redisTemplate.opsForValue().increment("promo_item_stock_"+itemId,amount.intValue() * -1);
+        if(result > 0){
+            //更新库存成功
+            boolean mqResult = mqProducer.asyncReduceStock(itemId, amount);
+            if (mqResult) {
+                return true;
+            }else {
+                //消息发送失败--回补库存
+                increaseStock(itemId,amount);
+                return false;
+            }
+        }else if(result == 0){
+            //库存为0--告知
+            redisTemplate.opsForValue().set("promo_item_stock_invalid_"+itemId,"true");
             //更新库存成功
             return true;
-        }else{
-            //更新库存失败
+        }else {
+            //非法库存--回补库存
+            increaseStock(itemId,amount);
             return false;
         }
+    }
 
+    @Override
+    public boolean increaseStock(Integer itemId, Integer amount) throws BusinessException {
+        redisTemplate.opsForValue().increment("promo_item_stock_"+itemId,amount.intValue());
+        return true;
     }
 
     @Override

@@ -1,0 +1,76 @@
+package com.zc.miaoshaproject.mq;
+
+import com.alibaba.fastjson.JSON;
+import com.zc.miaoshaproject.service.OrderService;
+import org.apache.rocketmq.client.exception.MQBrokerException;
+import org.apache.rocketmq.client.exception.MQClientException;
+import org.apache.rocketmq.client.producer.DefaultMQProducer;
+import org.apache.rocketmq.client.producer.TransactionMQProducer;
+import org.apache.rocketmq.common.message.Message;
+import org.apache.rocketmq.remoting.exception.RemotingException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import javax.annotation.PostConstruct;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 描述:
+ *
+ * @Author: zhangchao
+ * @Date: 8/21/20 9:47 下午
+ **/
+@Component
+public class MqProducer {
+    private DefaultMQProducer producer;
+
+    private TransactionMQProducer transactionMQProducer;
+
+    @Value("${mq.nameserver.addr}")
+    private String nameAddr;
+
+    @Value("${mq.topicname}")
+    private String topicName;
+
+    @Autowired
+    private OrderService orderService;
+
+    @PostConstruct
+    public void init() throws MQClientException {
+        //做mq的初始化工作
+        producer = new DefaultMQProducer("producer_group");
+        producer.setNamesrvAddr(nameAddr);
+        producer.start();
+
+    }
+
+    //同步库存扣减消息
+    public boolean asyncReduceStock(Integer itemId,Integer amount)  {
+        Map<String,Object> bodyMap = new HashMap<>();
+        bodyMap.put("itemId",itemId);
+        bodyMap.put("amount",amount);
+
+        Message message = new Message(topicName,"increase",
+                JSON.toJSON(bodyMap).toString().getBytes(StandardCharsets.UTF_8));
+        try {
+            producer.send(message);
+        } catch (MQClientException e) {
+            e.printStackTrace();
+            return false;
+        } catch (RemotingException e) {
+            e.printStackTrace();
+            return false;
+        } catch (MQBrokerException e) {
+            e.printStackTrace();
+            return false;
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+            return false;
+        }
+        System.out.println("发送消息...");
+        return true;
+    }
+}
