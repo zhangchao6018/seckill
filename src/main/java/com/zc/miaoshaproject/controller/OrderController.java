@@ -1,5 +1,6 @@
 package com.zc.miaoshaproject.controller;
 
+import com.google.common.util.concurrent.RateLimiter;
 import com.zc.miaoshaproject.error.BusinessException;
 import com.zc.miaoshaproject.error.EmBusinessError;
 import com.zc.miaoshaproject.mq.MqProducer;
@@ -45,10 +46,15 @@ public class OrderController extends BaseController {
 
     private ExecutorService executorService;
 
-    //初始化线程队列 size即为工作队列数,等待队列为无界队列(并无影响)
+    private RateLimiter orderCreateRateLimiter;
+
+    //初始化线程队列 size即为实际工作队列数,实际可以自定义线程池,用有界队列限制请求数
     @PostConstruct
     public void initThreadPool(){
         executorService = Executors.newFixedThreadPool(20);
+
+        //根据压测情况设置数值
+        orderCreateRateLimiter = RateLimiter.create(300);
     }
 
     //生成秒杀令牌
@@ -83,6 +89,9 @@ public class OrderController extends BaseController {
                                         @RequestParam(name="amount")Integer amount,
                                         @RequestParam(name="promoId",required = false)Integer promoId,
                                         @RequestParam(name="promoToken",required = false)String promoToken) throws BusinessException {
+        if (!orderCreateRateLimiter.tryAcquire()) {
+            throw new BusinessException(EmBusinessError.RATELIMIT);
+        }
         //1.校验token及缓存中的用户登录信息
         UserModel userModel = validLoginInfo();
 
@@ -129,7 +138,7 @@ public class OrderController extends BaseController {
             throw new BusinessException(EmBusinessError.USER_NOT_LOGIN,"用户还未登陆，不能下单");
         }
 
-        //获取用户的登陆信息    //查询数据库改为缓存中取
+        //数据库获取用户的登陆信息 改为缓存中取
 //        UserModel userModel = (UserModel)httpServletRequest.getSession().getAttribute("LOGIN_USER");
         UserModel userModel = (UserModel) redisTemplate.opsForValue().get(token);
         if (Objects.isNull(userModel)){
